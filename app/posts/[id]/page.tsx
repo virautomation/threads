@@ -19,9 +19,12 @@ export default async function PostDetailPage({ params }: { params: { id: string 
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-4xl">
-      <Link href="/posts" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ChevronLeft className="h-4 w-4" /> Back to posts
-      </Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link href="/posts" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" /> Back to posts
+        </Link>
+        <PerformanceButton postId={post.id} />
+      </div>
 
       <Card>
         <CardHeader>
@@ -75,8 +78,6 @@ export default async function PostDetailPage({ params }: { params: { id: string 
           </div>
         </CardContent>
       </Card>
-
-      <PerformanceButton postId={post.id} />
     </div>
   );
 }
