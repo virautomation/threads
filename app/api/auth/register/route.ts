@@ -1,0 +1,29 @@
+import { NextRequest, NextResponse } from "next/server";
+import { countAdmins, createAdmin } from "@/lib/admin";
+import { SESSION_COOKIE_NAME, sessionCookieOptions, signSession } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
+
+export async function POST(req: NextRequest) {
+  const { email, password } = await req.json().catch(() => ({}));
+
+  if (typeof email !== "string" || typeof password !== "string") {
+    return NextResponse.json({ error: "email_and_password_required" }, { status: 400 });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "invalid_email" }, { status: 400 });
+  }
+  if (password.length < 8) {
+    return NextResponse.json({ error: "password_min_8_chars" }, { status: 400 });
+  }
+
+  if ((await countAdmins()) > 0) {
+    return NextResponse.json({ error: "registration_closed" }, { status: 403 });
+  }
+
+  const admin = await createAdmin(email, password);
+  const token = await signSession({ sub: admin.id, email: admin.email });
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(SESSION_COOKIE_NAME, token, sessionCookieOptions());
+  return res;
+}

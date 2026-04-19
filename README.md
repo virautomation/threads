@@ -46,12 +46,13 @@ Register a Meta Developer app with the **Threads** product enabled.
 npm run dev      # http://localhost:3000
 ```
 
-Visit `/settings` → **Connect Threads** to do OAuth. After the callback succeeds, optionally pin the user by copying the displayed UUID into `APP_USER_ID` in `.env.local`.
+1. Visit `/register` untuk membuat admin pertama (pendaftaran otomatis ditutup setelah ada 1 admin).
+2. Setelah login, ke `/settings` → **Connect Threads** untuk OAuth.
 
 ## Sync
 
 - **Manual:** the **Sync now** button on the dashboard / settings page.
-- **Cron:** `vercel.json` schedules `/api/cron/sync?secret=$CRON_SECRET` every 6 hours. The route also accepts `Authorization: Bearer $CRON_SECRET`.
+- **Cron:** belum dipasang. Endpoint `/api/cron/sync` tersedia (guarded by `CRON_SECRET`) — bisa dipanggil manual atau dijadwalkan nanti.
 
 ## LLM analysis
 

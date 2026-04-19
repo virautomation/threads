@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "./supabase/server";
 import { decryptToken } from "./crypto";
-import { env } from "./env";
 
 export interface AppUser {
   id: string;
@@ -14,15 +13,16 @@ export interface AppUser {
 }
 
 /**
- * Single-user MVP: returns the first (and only) connected user, or null.
- * If APP_USER_ID is set, prefer that row (useful for prod safety).
+ * Single-user MVP: returns the most recently connected user, or null.
  */
 export async function getCurrentUser(): Promise<AppUser | null> {
   const db = supabaseAdmin();
-  const pinned = env.appUserId();
-  const q = db.from("users").select("*").limit(1);
-  if (pinned) q.eq("id", pinned);
-  const { data, error } = await q.maybeSingle();
+  const { data, error } = await db
+    .from("users")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   if (error) throw new Error(`getCurrentUser: ${error.message}`);
   return (data as AppUser) ?? null;
 }

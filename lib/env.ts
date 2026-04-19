@@ -19,6 +19,6 @@ export const env = {
     process.env.OPENROUTER_MODEL_LIGHT ?? "anthropic/claude-haiku-4.5",
   tokenEncryptionKey: () => required("TOKEN_ENCRYPTION_KEY", process.env.TOKEN_ENCRYPTION_KEY),
   cronSecret: () => required("CRON_SECRET", process.env.CRON_SECRET),
+  sessionSecret: () => required("SESSION_SECRET", process.env.SESSION_SECRET),
   appUrl: () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-  appUserId: () => process.env.APP_USER_ID,
 };

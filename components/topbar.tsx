@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
 import { Plug } from "lucide-react";
 import { getCurrentUser } from "@/lib/user";
+import { LogoutButton } from "./settings/logout-button";
 
 export async function Topbar() {
   let user = null as Awaited<ReturnType<typeof getCurrentUser>>;
@@ -35,6 +36,7 @@ export async function Topbar() {
           </Button>
         )}
         <ThemeToggle />
+        <LogoutButton />
       </div>
     </header>
   );

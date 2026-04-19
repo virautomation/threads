@@ -42,13 +42,7 @@ export default async function SettingsPage({
         <Card className="border-emerald-500/50">
           <CardContent className="pt-6 flex items-start gap-2 text-sm">
             <ShieldCheck className="h-4 w-4 text-emerald-500 mt-0.5" />
-            <div>
-              <div className="font-medium">Akun terhubung.</div>
-              <div className="text-muted-foreground">
-                Set <code className="font-mono">APP_USER_ID={searchParams.uid ?? user.id}</code> di .env.local untuk
-                mengunci single-user mode (opsional).
-              </div>
-            </div>
+            <div className="font-medium">Akun terhubung.</div>
           </CardContent>
         </Card>
       )}

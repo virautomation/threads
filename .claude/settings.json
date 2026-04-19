@@ -5,7 +5,8 @@
       "Bash(openssl rand *)",
       "Bash(echo \"TOKEN_ENCRYPTION_KEY=$\\(openssl rand -hex 32\\)\")",
       "Bash(echo \"CRON_SECRET=$\\(openssl rand -hex 24\\)\")",
-      "Bash(vercel --version)"
+      "Bash(vercel --version)",
+      "Bash(git remote *)"
     ]
   }
 }
