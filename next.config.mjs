@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "standalone",
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "scontent.cdninstagram.com" },
@@ -9,4 +10,5 @@ const nextConfig = {
   },
   experimental: { serverActions: { allowedOrigins: ["*"] } },
 };
+
 export default nextConfig;
