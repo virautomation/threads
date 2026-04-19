@@ -45,7 +45,7 @@ export async function listPosts(userId: string, opts: { limit?: number; sinceDay
     .from("post_insights")
     .select("post_id, views, likes, replies, reposts, quotes, shares, engagement_rate")
     .in("post_id", ids);
-  if (insErr) console.log(`[listPosts] insights error=${insErr.message}`);
+  console.log(`[listPosts] insights=${insights?.length ?? 0} error=${insErr?.message ?? "none"} ids=${JSON.stringify(ids)}`);
   const byId = new Map<string, any>();
   (insights ?? []).forEach((i: any) => byId.set(i.post_id, i));
 
