@@ -23,42 +23,57 @@ export interface PostRow {
 
 export async function listPosts(userId: string, opts: { limit?: number; sinceDays?: number } = {}): Promise<PostRow[]> {
   const db = supabaseAdmin();
-  const q = db
+
+  // 1) Fetch posts (no embed) — sidestep PostgREST relation cache issues
+  const postsQ = db
     .from("posts")
-    .select(
-      "id, threads_post_id, text, media_type, media_url, thumbnail_url, permalink, is_quote_post, published_at, post_insights ( views, likes, replies, reposts, quotes, shares, engagement_rate )",
-    )
+    .select("id, threads_post_id, text, media_type, media_url, thumbnail_url, permalink, is_quote_post, published_at")
     .eq("user_id", userId)
     .order("published_at", { ascending: false });
   if (opts.sinceDays) {
-    q.gte("published_at", new Date(Date.now() - opts.sinceDays * 86400_000).toISOString());
+    postsQ.gte("published_at", new Date(Date.now() - opts.sinceDays * 86400_000).toISOString());
   }
-  if (opts.limit) q.limit(opts.limit);
-  const { data, error } = await q;
-  console.log(`[listPosts] userId=${userId} rows=${data?.length ?? 0} error=${error?.message ?? "none"}`);
-  if (error) throw new Error(`listPosts: ${error.message}`);
-  return (data ?? []).map((r: any) => ({
-    id: r.id,
-    threads_post_id: r.threads_post_id,
-    text: r.text,
-    media_type: r.media_type,
-    media_url: r.media_url,
-    thumbnail_url: r.thumbnail_url,
-    permalink: r.permalink,
-    is_quote_post: r.is_quote_post,
-    published_at: r.published_at,
-    insights: r.post_insights
-      ? {
-          views: r.post_insights.views ?? 0,
-          likes: r.post_insights.likes ?? 0,
-          replies: r.post_insights.replies ?? 0,
-          reposts: r.post_insights.reposts ?? 0,
-          quotes: r.post_insights.quotes ?? 0,
-          shares: r.post_insights.shares ?? 0,
-          engagement_rate: Number(r.post_insights.engagement_rate ?? 0),
-        }
-      : null,
-  }));
+  if (opts.limit) postsQ.limit(opts.limit);
+  const { data: posts, error: postsErr } = await postsQ;
+  console.log(`[listPosts] userId=${userId} posts=${posts?.length ?? 0} error=${postsErr?.message ?? "none"}`);
+  if (postsErr) throw new Error(`listPosts: ${postsErr.message}`);
+  if (!posts || posts.length === 0) return [];
+
+  // 2) Fetch insights for those posts separately
+  const ids = posts.map((p: any) => p.id);
+  const { data: insights, error: insErr } = await db
+    .from("post_insights")
+    .select("post_id, views, likes, replies, reposts, quotes, shares, engagement_rate")
+    .in("post_id", ids);
+  if (insErr) console.log(`[listPosts] insights error=${insErr.message}`);
+  const byId = new Map<string, any>();
+  (insights ?? []).forEach((i: any) => byId.set(i.post_id, i));
+
+  return posts.map((r: any) => {
+    const ins = byId.get(r.id);
+    return {
+      id: r.id,
+      threads_post_id: r.threads_post_id,
+      text: r.text,
+      media_type: r.media_type,
+      media_url: r.media_url,
+      thumbnail_url: r.thumbnail_url,
+      permalink: r.permalink,
+      is_quote_post: r.is_quote_post,
+      published_at: r.published_at,
+      insights: ins
+        ? {
+            views: ins.views ?? 0,
+            likes: ins.likes ?? 0,
+            replies: ins.replies ?? 0,
+            reposts: ins.reposts ?? 0,
+            quotes: ins.quotes ?? 0,
+            shares: ins.shares ?? 0,
+            engagement_rate: Number(ins.engagement_rate ?? 0),
+          }
+        : null,
+    };
+  });
 }
 
 export async function getPost(userId: string, postId: string): Promise<PostRow | null> {
