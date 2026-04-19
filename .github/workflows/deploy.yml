@@ -1,0 +1,76 @@
+name: Deploy Threadlens
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: threadlens-production
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Prepare deploy package
+        run: |
+          mkdir -p deploy/next_static
+          cp -r .next/standalone/* deploy/
+          cp -r .next/static deploy/next_static/
+          if [ -d public ]; then cp -r public deploy/public; fi
+
+      - name: Upload app to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "deploy/*"
+          target: "/root/threadlens-release"
+          strip_components: 1
+
+      - name: Restart app on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+
+            export NVM_DIR="/root/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            export PATH="$NVM_DIR/versions/node/v22.22.1/bin:$PATH"
+
+            mkdir -p /root/threadlens
+            find /root/threadlens -mindepth 1 ! -name '.env' ! -name '.env.local' -delete || true
+            cp -r /root/threadlens-release/* /root/threadlens/
+            cd /root/threadlens
+
+            mkdir -p .next
+            rm -rf .next/static
+            if [ -d next_static/static ]; then
+              cp -r next_static/static .next/static
+              rm -rf next_static
+            fi
+
+            pm2 describe threadlens > /dev/null 2>&1 && pm2 delete threadlens || true
+            PORT=3001 pm2 start server.js --name threadlens
+            pm2 save
