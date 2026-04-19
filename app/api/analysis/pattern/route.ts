@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       { role: "user", content: prompt },
     ],
     temperature: 0.4,
-    max_tokens: 2500,
+    max_tokens: 1200,
   });
 
   const output = llm.choices?.[0]?.message?.content ?? "(no output)";

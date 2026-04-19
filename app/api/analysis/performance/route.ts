@@ -9,6 +9,16 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  try {
+    return await handle(req);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "analysis_failed";
+    console.error("[api/analysis/performance]", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+async function handle(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "not_connected" }, { status: 400 });
 
@@ -70,7 +80,7 @@ export async function POST(req: NextRequest) {
       { role: "user", content: prompt },
     ],
     temperature: 0.5,
-    max_tokens: 1500,
+    max_tokens: 800,
   });
 
   const output = llm.choices?.[0]?.message?.content ?? "(no output)";

@@ -33,6 +33,7 @@ export async function chat(opts: {
       messages: opts.messages,
       temperature: opts.temperature ?? 0.7,
       max_tokens: opts.max_tokens ?? 2048,
+      max_completion_tokens: opts.max_tokens ?? 2048,
     }),
   });
   if (!res.ok) {
