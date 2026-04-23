@@ -38,7 +38,12 @@ Analisa dalam Bahasa Indonesia natural, ringkas tapi spesifik:
 2. Faktor spesifik dari KONTEN (hook, tone, topik, struktur, panjang, CTA, timing) yang kemungkinan mempengaruhi performa.
 3. 2–3 rekomendasi konkret kalau mau bikin post serupa.
 
-Hindari generic advice. Fokus pada observasi yang spesifik untuk post ini. Format output dalam markdown dengan heading singkat.`;
+Hindari generic advice. Fokus pada observasi yang spesifik untuk post ini. Format output dalam markdown dengan heading singkat.
+
+PENTING — FORMAT OUTPUT:
+- JANGAN pakai tabel markdown (\`| kolom | kolom |\`) — renderer kita tidak support tabel.
+- Pakai heading (## atau ###), paragraf biasa, dan bullet list (\`-\`) atau numbered list (\`1.\`).
+- Kalau perlu banding-bandingin aspek, tulis sebagai bullet list: "**Hook:** observasi..." bukan tabel.`;
 }
 
 export interface PatternContext {
@@ -70,5 +75,10 @@ Tulis laporan pola dalam Bahasa Indonesia natural. Format markdown dengan headin
 3. **Pola yang membuat BOTTOM under-perform**, dengan contoh.
 4. **3 rekomendasi konkret** untuk post berikutnya berdasarkan pola yang terdeteksi.
 
-Spesifik dan dapat ditindak — hindari saran generik seperti "buat konten yang menarik".`;
+Spesifik dan dapat ditindak — hindari saran generik seperti "buat konten yang menarik".
+
+PENTING — FORMAT OUTPUT:
+- JANGAN pakai tabel markdown (\`| kolom | kolom |\`) — renderer kita tidak support tabel.
+- Pakai heading (## atau ###), paragraf biasa, dan bullet list (\`-\`) atau numbered list (\`1.\`).
+- Untuk perbandingan top vs bottom, tulis sebagai dua section terpisah dengan bullet list, bukan tabel.`;
 }

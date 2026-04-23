@@ -106,7 +106,10 @@ export function PostTable({ rows }: { rows: PostRow[] }) {
             {filtered.map((r) => (
               <TableRow key={r.id}>
                 <TableCell>
-                  <Link href={`/posts/${r.id}`} className="hover:underline">
+                  <Link
+                    href={`/posts/${r.id}`}
+                    className="underline underline-offset-2 decoration-muted-foreground/40 hover:decoration-foreground"
+                  >
                     {truncate(r.text, 110) || "(tanpa teks)"}
                   </Link>
                 </TableCell>
