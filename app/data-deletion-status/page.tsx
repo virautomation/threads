@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AtSign, ShieldCheck } from "lucide-react";
+import { LegalShell } from "@/components/legal-shell";
 
 export const metadata = {
   title: "Data Deletion Status — ThreadLens",
@@ -11,52 +11,70 @@ export default function DataDeletionStatusPage({
   searchParams: { code?: string };
 }) {
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b">
-        <div className="mx-auto max-w-2xl w-full flex items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <AtSign className="h-4 w-4" />
-            </div>
-            <span className="font-semibold">ThreadLens</span>
-          </Link>
+    <LegalShell
+      title={
+        <>
+          Data Deletion <em>Confirmed</em>
+        </>
+      }
+      meta={
+        <>
+          <span className="pill">Processed via Meta callback</span>
+          <span className="sep"></span>
+          <span>Permanent &amp; irreversible</span>
+        </>
+      }
+    >
+      <div className="status-panel">
+        <div className="status-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M3.5 8.5l3 3 6-6.5"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
-      </header>
-
-      <main className="flex-1 flex items-center">
-        <div className="mx-auto max-w-2xl w-full px-6 py-12 space-y-6">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="h-6 w-6 text-emerald-500 mt-1" />
-            <div className="space-y-2">
-              <h1 className="text-2xl font-semibold">Data Deletion Diproses</h1>
-              <p className="text-sm text-muted-foreground">
-                Permintaan penghapusan data dari Meta sudah kami terima dan jalankan. Semua post,
-                insights, riwayat analisa, dan token akses yang terkait dengan akun Threads kamu
-                telah dihapus dari database kami.
-              </p>
-              {searchParams.code && (
-                <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                  <div className="text-xs text-muted-foreground">Confirmation code</div>
-                  <code className="font-mono break-all">{searchParams.code}</code>
-                </div>
-              )}
-              <p className="text-sm text-muted-foreground">
-                Kalau kamu mau menghubungkan ulang akun Threads, kamu bisa mendaftar dan connect
-                lagi kapan saja lewat halaman utama.
-              </p>
+        <div>
+          <h2>Your data has been deleted</h2>
+          <p>
+            We received and processed a data deletion request from Meta. All posts, insights, analysis history, and the
+            encrypted access token associated with the matching Threads account have been permanently removed from our
+            database.
+          </p>
+          <p>
+            If you want to reconnect a Threads account in the future, you can register and authorize it again at any
+            time from the home page.
+          </p>
+          {searchParams.code ? (
+            <div className="status-code">
+              <span className="k">Confirmation code</span>
+              <code>{searchParams.code}</code>
             </div>
-          </div>
-
-          <div className="pt-4">
-            <Link
-              href="/"
-              className="text-sm underline text-muted-foreground hover:text-foreground"
-            >
-              ← Kembali ke beranda
-            </Link>
-          </div>
+          ) : null}
         </div>
-      </main>
-    </div>
+      </div>
+
+      <h2>
+        <span className="num">01</span>What this confirms
+      </h2>
+      <ul>
+        <li>The Threads access token for the revoked account has been deleted.</li>
+        <li>All synced posts, media URLs, permalinks, and timestamps have been removed.</li>
+        <li>All synced per-post and account-level insights have been removed.</li>
+        <li>All AI analysis history generated for that account has been removed.</li>
+      </ul>
+
+      <h2>
+        <span className="num">02</span>Need to verify?
+      </h2>
+      <p>
+        Email <a href="mailto:bhskindatabase@gmail.com">bhskindatabase@gmail.com</a> with your confirmation code and we
+        will respond with the deletion status on record. For the full process, see our{" "}
+        <Link href="/data-deletion">data deletion instructions</Link>.
+      </p>
+    </LegalShell>
   );
 }
