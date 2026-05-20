@@ -3,7 +3,9 @@ import { getActiveUserToken } from "@/lib/user";
 import { publishThreadChain, THREADS_TEXT_LIMIT } from "@/lib/threads/api";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// Threads containers are processed asynchronously; a multi-part thread polls
+// each container until ready, so allow generous time.
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   let user, token;
@@ -41,6 +43,11 @@ export async function POST(req: NextRequest) {
       ok: true,
       ids: result.ids,
       count: result.ids.length,
+      total: result.total,
+      // Set when some parts published but a later one failed.
+      partial: result.failedAt !== undefined,
+      failedAt: result.failedAt,
+      partialError: result.error,
       permalink: result.permalink,
     });
   } catch (e) {

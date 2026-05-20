@@ -202,10 +202,49 @@ interface ThreadsCreationId {
   id: string;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface ContainerStatus {
+  status?: "EXPIRED" | "ERROR" | "FINISHED" | "IN_PROGRESS" | "PUBLISHED";
+  error_message?: string;
+}
+
+/**
+ * Threads processes media containers asynchronously. Publishing immediately
+ * after creating one often fails with "Media Not Found" (code 24) because the
+ * container hasn't propagated yet. Poll its status until it is ready.
+ */
+async function waitForContainerReady(containerId: string, token: string): Promise<void> {
+  for (let i = 0; i < 12; i++) {
+    await sleep(i === 0 ? 700 : 1200);
+    try {
+      const s = await gget<ContainerStatus>(`/${containerId}`, token, {
+        fields: "status,error_message",
+      });
+      if (s.status === "FINISHED") return;
+      if (s.status === "ERROR" || s.status === "EXPIRED") {
+        throw new Error(`container ${s.status}: ${s.error_message ?? "unknown error"}`);
+      }
+      // IN_PROGRESS, PUBLISHED, or not-yet-queryable → keep waiting
+    } catch (e) {
+      // A transient lookup miss right after creation is expected; only surface a
+      // hard ERROR/EXPIRED status (re-thrown above) on the final attempt.
+      if (/container (ERROR|EXPIRED)/.test(String(e))) throw e;
+    }
+  }
+  // Fall through and let the publish call make the final attempt.
+}
+
+function isTransientPublishError(e: unknown): boolean {
+  return /Media Not Found|cannot be found|does not exist|"code":\s*24|"code":\s*4|is_transient":\s*true/i.test(
+    String(e),
+  );
+}
+
 /**
  * Publish a single text-only thread. Threads publishing is a two-step flow:
  *   1. create a media container (`/{user}/threads`)
- *   2. publish that container (`/{user}/threads_publish`)
+ *   2. wait for it to be ready, then publish it (`/{user}/threads_publish`)
  * Pass `replyToId` to publish this post as a reply (used to build a thread chain).
  * Requires the `threads_content_publish` scope.
  */
@@ -227,9 +266,24 @@ export async function publishTextPost(
     ...(replyToId ? { reply_to_id: replyToId } : {}),
   });
 
-  const published = await gpost<ThreadsCreationId>(`/${threadsUserId}/threads_publish`, token, {
-    creation_id: container.id,
-  });
+  await waitForContainerReady(container.id, token);
+
+  // Publish, retrying transient "Media Not Found" with backoff.
+  let published: ThreadsCreationId | undefined;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      published = await gpost<ThreadsCreationId>(`/${threadsUserId}/threads_publish`, token, {
+        creation_id: container.id,
+      });
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (!isTransientPublishError(e)) throw e;
+      await sleep(1500 * (attempt + 1));
+    }
+  }
+  if (!published) throw lastErr ?? new Error("threads_publish failed");
 
   // Best-effort: fetch the permalink so the UI can link to the live post.
   let permalink: string | undefined;
@@ -246,14 +300,17 @@ export async function publishTextPost(
 /**
  * Publish a chain of connected posts ("thread"). The first segment is the root
  * post; each following segment is published as a reply to the previous one,
- * producing the comment-in-comment layout. Returns every published id plus the
- * root post's permalink.
+ * producing the comment-in-comment layout.
+ *
+ * Returns the ids published so far plus the root permalink. If a later part
+ * fails after some succeed, the earlier parts stay live and `failedAt` /
+ * `error` describe where it stopped — the caller decides how to report it.
  */
 export async function publishThreadChain(
   threadsUserId: string,
   token: string,
   segments: string[],
-): Promise<{ ids: string[]; permalink?: string }> {
+): Promise<{ ids: string[]; permalink?: string; total: number; failedAt?: number; error?: string }> {
   const parts = segments.map((s) => s.trim()).filter(Boolean);
   if (parts.length === 0) throw new Error("Cannot publish an empty thread.");
 
@@ -261,14 +318,28 @@ export async function publishThreadChain(
   let permalink: string | undefined;
   let replyTo: string | undefined;
 
-  for (const part of parts) {
-    const res = await publishTextPost(threadsUserId, token, part, replyTo);
-    ids.push(res.id);
-    if (replyTo === undefined) permalink = res.permalink; // root permalink only
-    replyTo = res.id;
+  for (let i = 0; i < parts.length; i++) {
+    try {
+      const res = await publishTextPost(threadsUserId, token, parts[i], replyTo);
+      ids.push(res.id);
+      if (replyTo === undefined) permalink = res.permalink; // root permalink only
+      replyTo = res.id;
+      // Brief pause so the just-published post is referenceable as the next reply.
+      if (i < parts.length - 1) await sleep(1500);
+    } catch (e) {
+      // If nothing published yet, fail outright; otherwise return partial result.
+      if (ids.length === 0) throw e;
+      return {
+        ids,
+        permalink,
+        total: parts.length,
+        failedAt: i + 1,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
   }
 
-  return { ids, permalink };
+  return { ids, permalink, total: parts.length };
 }
 
 function flattenInsights(res: ThreadsInsightsResponse, names: string[]): Record<string, number> {

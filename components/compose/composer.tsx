@@ -82,13 +82,25 @@ export function Composer({ canPublish, author }: { canPublish: boolean; author: 
         );
         return;
       }
+      const view = json.permalink
+        ? { label: "Lihat", onClick: () => window.open(json.permalink, "_blank") }
+        : undefined;
+
+      if (json.partial) {
+        // Some parts published, a later one failed. Keep the unpublished parts
+        // so the user can retry just those (they'll start a new thread).
+        const remaining = filled.slice(json.count);
+        toast.warning(
+          `Cuma ${json.count} dari ${json.total} bagian yang terpublish. Sisanya gagal — coba publish lagi bagian sisanya.`,
+          { action: view, duration: 8000 },
+        );
+        setSegments(remaining.length > 0 ? remaining : [""]);
+        return;
+      }
+
       toast.success(
         json.count > 1 ? `Thread ${json.count} bagian terpublish!` : "Terpublish ke Threads!",
-        {
-          action: json.permalink
-            ? { label: "Lihat", onClick: () => window.open(json.permalink, "_blank") }
-            : undefined,
-        },
+        { action: view },
       );
       setSegments([""]);
       setDrafts([]);
