@@ -66,7 +66,7 @@ export default async function LandingPage() {
               layer for <em>Threads.</em>
             </h1>
             <p className="lede">
-              ThreadLens turns your Threads account into a clean, exportable performance dashboard. Track engagement, surface what&apos;s working, and get AI-assisted recommendations — all through Meta&apos;s official Threads API.
+              ThreadLens turns your Threads account into a clean, exportable performance dashboard. Track engagement, surface what&apos;s working, get AI-assisted recommendations — then draft and publish your next post, all through Meta&apos;s official Threads API.
             </p>
             <div className="cta-row">
               <Link className="btn btn-primary btn-icon-trail" href={primaryHref}>Connect Threads </Link>
@@ -234,7 +234,7 @@ export default async function LandingPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 32, marginBottom: 40, flexWrap: "wrap" }}>
             <div>
               <div className="eyebrow">Features</div>
-              <h2 style={{ marginTop: 16, maxWidth: "18ch" }}>Everything you need to understand Threads performance.</h2>
+              <h2 style={{ marginTop: 16, maxWidth: "18ch" }}>Everything you need to understand — and grow — your Threads presence.</h2>
             </div>
             <p className="lede" style={{ margin: 0 }}>Built for creators, brands, and businesses who want a calmer, deeper view of their content — beyond what the native app surfaces.</p>
           </div>
@@ -268,13 +268,21 @@ export default async function LandingPage() {
             <div className="feature">
               <span className="feature-tag">04</span>
               <div className="feature-icon">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M10.5 2.5l3 3L6 13l-3.2.7.7-3.2 7-8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
+              </div>
+              <h3>Compose &amp; publish</h3>
+              <p>Draft a single post or a full thread — with optional AI suggestions in your own voice — preview the Threads layout, then publish in one click. You write or approve every post; nothing is auto-posted.</p>
+            </div>
+            <div className="feature">
+              <span className="feature-tag">05</span>
+              <div className="feature-icon">
                 <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.6" /><path d="M8 4v4l2.5 1.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
               </div>
               <h3>Historical metrics</h3>
               <p>Keep a clean, long-term archive of your performance — well beyond the rolling window the native app exposes.</p>
             </div>
             <div className="feature">
-              <span className="feature-tag">05</span>
+              <span className="feature-tag">06</span>
               <div className="feature-icon">
                 <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 2v8m0 0l-2.5-2.5M8 10l2.5-2.5M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </div>
@@ -282,7 +290,7 @@ export default async function LandingPage() {
               <p>Pipe any view into a CSV in one click — for reports, board decks, or your own data warehouse.</p>
             </div>
             <div className="feature">
-              <span className="feature-tag">06</span>
+              <span className="feature-tag">07</span>
               <div className="feature-icon">
                 <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="1.2" stroke="currentColor" strokeWidth="1.6" /><path d="M5.5 7V5a2.5 2.5 0 015 0v2" stroke="currentColor" strokeWidth="1.6" /></svg>
               </div>
@@ -300,7 +308,7 @@ export default async function LandingPage() {
             <div className="compliance-head">
               <div className="eyebrow">Trust &amp; compliance</div>
               <h2 style={{ marginTop: 18 }}>A platform Meta reviewers can verify in minutes.</h2>
-              <p className="lede" style={{ marginTop: 18 }}>ThreadLens is built within Meta&apos;s developer policies. We use the official Threads API for read-only access to data the account owner already has — nothing more.</p>
+              <p className="lede" style={{ marginTop: 18 }}>ThreadLens is built within Meta&apos;s developer policies. We use the official Threads API to read the account owner&apos;s own data, and to publish a post only when the user writes or approves it and presses Publish — nothing happens automatically or without an explicit action.</p>
               <div style={{ display: "flex", gap: 10, marginTop: 24, flexWrap: "wrap" }}>
                 <Link className="btn btn-secondary btn-sm" href="/privacy-policy">Read our data use policy</Link>
                 <Link className="btn btn-ghost btn-sm" href="/privacy-policy">App review summary →</Link>
@@ -397,8 +405,8 @@ export default async function LandingPage() {
             </div>
             <div className="step">
               <div className="step-num">Step</div>
-              <h3>Get AI recommendations</h3>
-              <p>ThreadLens summarizes patterns in your data and proposes concrete next moves — formats, timing, and angles to try.</p>
+              <h3>Get recommendations, then post</h3>
+              <p>ThreadLens summarizes patterns in your data and drafts your next post or thread in your voice. You edit, preview the Threads layout, and publish in one click — without leaving the app.</p>
               <div className="step-illu">
                 <svg width="100%" height="100%" viewBox="0 0 220 80" preserveAspectRatio="xMidYMid meet">
                   <rect x="20" y="14" width="180" height="52" rx="8" fill="#fff" stroke="#e3e3e3" />
@@ -421,7 +429,7 @@ export default async function LandingPage() {
             <div>
               <div className="eyebrow">Security &amp; privacy</div>
               <h2 style={{ marginTop: 18, maxWidth: "14ch" }}>Your data is yours. We just make it legible.</h2>
-              <p style={{ marginTop: 18, fontSize: 17, lineHeight: 1.55, maxWidth: "50ch" }}>ThreadLens is read-only. We don&apos;t post, message, follow, like, or interact with anyone on your behalf. We don&apos;t sell or share data with third parties.</p>
+              <p style={{ marginTop: 18, fontSize: 17, lineHeight: 1.55, maxWidth: "50ch" }}>ThreadLens only acts when you tell it to. We publish a post solely when you write or approve the content and press Publish — we never auto-post, message, follow, like, or interact with anyone on your behalf. We don&apos;t sell or share data with third parties.</p>
               <ul>
                 <li>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -437,7 +445,7 @@ export default async function LandingPage() {
                 </li>
                 <li>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6.5" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  Granular scopes — we only request the permissions analytics requires.
+                  Granular scopes — analytics permissions plus content-publishing, so you can post from the app and nothing more.
                 </li>
               </ul>
             </div>
@@ -446,7 +454,7 @@ export default async function LandingPage() {
                 <span style={{ color: "#fff", fontWeight: 500 }}>session.token</span>
                 <span className="sec-badge green">active</span>
               </div>
-              <div className="sec-row"><span>scope</span><span>threads_basic, threads_manage_insights</span></div>
+              <div className="sec-row"><span>scope</span><span>threads_basic, threads_manage_insights, threads_content_publish</span></div>
               <div className="sec-row"><span>auth_method</span><span>oauth2 / meta</span></div>
               <div className="sec-row"><span>encryption</span><span>aes-256-gcm</span></div>
               <div className="sec-row"><span>transport</span><span>tls 1.3</span></div>
@@ -465,7 +473,7 @@ export default async function LandingPage() {
             Connect your Threads account.<br />
             <span className="serif-it" style={{ color: "#444" }}>See what&apos;s actually working.</span>
           </h2>
-          <p className="lede" style={{ textAlign: "center" }}>Free to try. Read-only. Disconnect any time. No password required.</p>
+          <p className="lede" style={{ textAlign: "center" }}>Free to try. You approve every post. Disconnect any time. No password required.</p>
           <div className="cta-row" style={{ justifyContent: "center" }}>
             <Link className="btn btn-primary btn-icon-trail" href={primaryHref}>Connect Threads </Link>
             <Link className="btn btn-secondary" href={dashboardHref}>Open Dashboard</Link>
