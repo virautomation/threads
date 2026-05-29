@@ -15,6 +15,7 @@ import { listReplizAccounts, listSchedules, type ReplizScheduleItem } from "@/li
 import { loadActiveMap } from "@/lib/repliz/settings";
 import { getLatestPerformance, getLearnings } from "@/lib/analytics/store";
 import { formatDate, formatDateTime, formatNumber, formatPercent, truncate } from "@/lib/utils";
+import { DeleteScheduleButton } from "@/components/autopilot/delete-schedule-button";
 
 export const dynamic = "force-dynamic";
 
@@ -128,7 +129,8 @@ export default async function AutopilotPage({
                   <TableHead className="w-44">Tayang</TableHead>
                   <TableHead className="w-40">Topik</TableHead>
                   <TableHead>Preview</TableHead>
-                  <TableHead className="w-16 text-right">Part</TableHead>
+                  <TableHead className="w-14 text-right">Part</TableHead>
+                  <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -140,6 +142,9 @@ export default async function AutopilotPage({
                       {truncate(s.description, 90) || "(tanpa teks)"}
                     </TableCell>
                     <TableCell className="text-right text-sm">{1 + (s.replies?.length ?? 0)}</TableCell>
+                    <TableCell className="text-right">
+                      <DeleteScheduleButton scheduleId={s.id} />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
