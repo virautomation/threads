@@ -1,26 +1,42 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { supabaseAdmin } from "../supabase/server";
 import { chat } from "../llm/gateway";
 import { buildComposePrompt, buildIdeaTextPrompt, parseDrafts } from "../analysis/prompts";
-import { publishThreadChain, THREADS_TEXT_LIMIT } from "../threads/api";
-import { listAccountsForAdmin, resolveAccount, resolveAccountWithToken } from "./accounts";
+import { THREADS_TEXT_LIMIT } from "../threads/api";
+import {
+  createSchedule,
+  deleteSchedule,
+  listReplizAccounts,
+  listReplizContent,
+  listSchedules,
+} from "../repliz/client";
+import { resolveReplizAccount } from "../repliz/accounts";
+import { critiqueDraft } from "./critic";
+
+// Buffer before a "publish now" goes live; Repliz is a scheduler, so immediate
+// posts are scheduled a minute out and processed by Repliz's pipeline.
+const PUBLISH_NOW_BUFFER_MS = 60 * 1000;
 
 /**
- * Build an MCP server scoped to one authenticated admin. Tools and resources
- * are bound at construction so handlers never need to re-authenticate.
+ * Build an MCP server. The Threads backend is Repliz (api.repliz.com/public):
+ * accounts, scheduling, publishing, and content all flow through it. `adminId`
+ * is the authenticated MCP caller; Repliz access uses server-side Basic creds,
+ * so adminId only gates access to the MCP itself.
  */
-export function buildMcpServer(adminId: string): McpServer {
+export function buildMcpServer(_adminId: string): McpServer {
   const server = new McpServer(
-    { name: "threadlens", version: "0.1.0" },
+    { name: "threadlens", version: "0.2.0" },
     {
       capabilities: { tools: {}, resources: {} },
       instructions:
-        "ThreadLens connector for managing the user's Threads accounts. " +
-        "Use `list_accounts` first to learn which accounts are connected, then " +
-        "`generate_draft` to draft content (grounded in the account's top posts) " +
-        "and `publish_thread` to publish. The `account` parameter selects which " +
-        "Threads account to act on by username; omit it to use the default.",
+        "ThreadLens connector — manages Threads accounts via Repliz. Flow: " +
+        "`list_accounts` to see accounts → `generate_draft` to write (or " +
+        "`generate_idea` to brainstorm plain text) → `schedule_post` to queue for " +
+        "a future time, or `publish_thread` to post now. `list_scheduled` shows the " +
+        "queue; `delete_schedule` removes an item. Scheduling/publishing run an " +
+        "automated safety+brand critic and will refuse unsafe content (esp. " +
+        "false medical claims for the women's-health niche). The `account` param " +
+        "selects a Threads account by username; omit to use the default.",
     },
   );
 
@@ -31,23 +47,20 @@ export function buildMcpServer(adminId: string): McpServer {
     {
       title: "List connected Threads accounts",
       description:
-        "Return the Threads accounts connected to ThreadLens. Use this first " +
-        "if the user references an account by name, to confirm the username is " +
-        "valid. The first account in the list is the default if `account` is omitted.",
+        "Return the Threads accounts connected in Repliz. Use this first if the " +
+        "user references an account by name, to confirm the username is valid. " +
+        "The first connected account is the default when `account` is omitted.",
       inputSchema: {},
     },
     async () => {
-      const accounts = await listAccountsForAdmin(adminId);
+      const accounts = (await listReplizAccounts("threads")).filter((a) => a.isConnected);
       const summary = accounts.map((a, i) => ({
         username: a.username,
         name: a.name,
-        threads_user_id: a.threads_user_id,
-        scopes: a.scopes ?? [],
+        account_id: a.id,
         is_default: i === 0,
       }));
-      return {
-        content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
-      };
+      return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
     },
   );
 
@@ -56,24 +69,17 @@ export function buildMcpServer(adminId: string): McpServer {
     {
       title: "Generate Threads draft(s)",
       description:
-        "Generate draft Threads content for the selected account, grounded in " +
-        "its top-performing past posts so voice matches. Default is multi-part " +
-        "thread mode. Returns drafts as an array of arrays-of-parts; each part " +
-        "respects the 500-char Threads limit. Drafts are NOT published — the " +
-        "user must approve and call `publish_thread` separately.",
+        "Generate draft Threads content for the selected account, grounded in its " +
+        "recent posts so voice matches. Default is multi-part thread mode. Returns " +
+        "drafts as an array of arrays-of-parts; each part respects the 500-char limit. " +
+        "Drafts are NOT published — call `schedule_post` or `publish_thread` after the " +
+        "content is chosen.",
       inputSchema: {
-        brief: z
-          .string()
-          .min(1)
-          .max(1000)
-          .describe("Topic / brief for the post, e.g. 'bahaya pcos'"),
+        brief: z.string().min(1).max(1000).describe("Topic / brief, e.g. 'tanda PCOS'"),
         account: z
           .string()
           .optional()
-          .describe(
-            "Threads username (without @) of the account to draft for. " +
-              "Omit to use the default account.",
-          ),
+          .describe("Threads username (without @). Omit to use the default account."),
         thread: z
           .boolean()
           .optional()
@@ -85,28 +91,24 @@ export function buildMcpServer(adminId: string): McpServer {
           .min(1)
           .max(5)
           .optional()
-          .describe("How many draft variants to produce. Defaults: 2 for thread, 3 for single."),
+          .describe("How many draft variants. Defaults: 2 for thread, 3 for single."),
       },
     },
     async ({ brief, account, thread = true, count }) => {
-      const user = await resolveAccount(adminId, account);
+      const acct = await resolveReplizAccount(account);
       const effectiveCount = count ?? (thread ? 2 : 3);
 
-      const db = supabaseAdmin();
-      const { data: posts } = await db
-        .from("posts")
-        .select("text, post_insights ( views, engagement_rate )")
-        .eq("user_id", user.id);
-
-      const topPosts = (posts ?? [])
-        .map((p: any) => ({
-          text: p.text as string | null,
-          views: Number(p.post_insights?.views ?? 0),
-          engagementRate: Number(p.post_insights?.engagement_rate ?? 0),
-        }))
-        .filter((p) => p.views > 0)
-        .sort((a, b) => b.engagementRate - a.engagementRate)
-        .slice(0, 8);
+      // Voice grounding: recent Repliz content text (no engagement metrics here).
+      let topPosts: Array<{ text: string | null; views: number; engagementRate: number }> = [];
+      try {
+        const { items } = await listReplizContent(acct.id);
+        topPosts = items
+          .filter((c) => (c.description ?? "").trim().length > 0)
+          .slice(0, 8)
+          .map((c) => ({ text: c.description, views: 0, engagementRate: 0 }));
+      } catch {
+        // Grounding is best-effort; fall back to no examples.
+      }
 
       const prompt = buildComposePrompt({
         brief: brief.trim(),
@@ -132,41 +134,24 @@ export function buildMcpServer(adminId: string): McpServer {
       const drafts = parseDrafts(llm.text).map((parts) =>
         parts.map((p) => p.slice(0, THREADS_TEXT_LIMIT)),
       );
-
       if (drafts.length === 0) {
         return {
           isError: true,
-          content: [
-            { type: "text", text: "No drafts could be parsed from the model output." },
-          ],
+          content: [{ type: "text", text: "No drafts could be parsed from the model output." }],
         };
       }
 
-      // Persist for the analysis history, same as the web compose flow.
-      await db.from("llm_analysis").insert({
-        user_id: user.id,
-        type: "ideas",
-        input_context: {
-          brief,
-          count: effectiveCount,
-          thread,
-          groundedOn: topPosts.length,
-          source: "mcp",
-        },
-        output: llm.text,
-        model_used: llm.model,
-        prompt_tokens: llm.usage.prompt_tokens,
-        completion_tokens: llm.usage.completion_tokens,
-      });
-
-      const payload = {
-        account: user.username,
-        thread,
-        model: llm.model,
-        drafts,
-      };
       return {
-        content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              { account: acct.username, thread, model: llm.model, drafts },
+              null,
+              2,
+            ),
+          },
+        ],
       };
     },
   );
@@ -176,32 +161,19 @@ export function buildMcpServer(adminId: string): McpServer {
     {
       title: "Brainstorm thread idea (plain text, no publish)",
       description:
-        "Generate publish-quality Threads content as PLAIN TEXT — for reading/" +
-        "copying, NOT for the publish pipeline. Output is human-readable text " +
-        "with 'Part 1:', 'Part 2:' markers (no XML tags). This tool does NOT " +
-        "touch any Threads account, does NOT create draft containers, does NOT " +
-        "publish, and does NOT persist anything. It also ignores account voice " +
-        "grounding — purely topic-driven brainstorming. Use this when the user " +
-        "wants to *read* a content idea. Use `generate_draft` (and then " +
-        "`publish_thread`) when the user wants to actually publish.",
+        "Generate publish-quality Threads content as PLAIN TEXT — for reading/copying, " +
+        "NOT for the publish pipeline. Output is human-readable text with 'Part 1:' " +
+        "markers (no XML). Does NOT touch any account, does NOT schedule/publish, does " +
+        "NOT persist, and ignores account voice grounding. Use when the user wants to " +
+        "*read* an idea. Use `generate_draft` then `schedule_post`/`publish_thread` to act.",
       inputSchema: {
-        brief: z
-          .string()
-          .min(1)
-          .max(1000)
-          .describe("Topic / brief, e.g. 'diet', 'mahasiswa males pake AI'."),
+        brief: z.string().min(1).max(1000).describe("Topic / brief, e.g. 'keputihan'."),
         thread: z
           .boolean()
           .optional()
           .default(true)
-          .describe("True = multi-part thread chain (default). False = single 500-char post."),
-        count: z
-          .number()
-          .int()
-          .min(1)
-          .max(5)
-          .optional()
-          .describe("How many idea variants. Default 1."),
+          .describe("True = multi-part thread chain (default). False = single post."),
+        count: z.number().int().min(1).max(5).optional().describe("How many idea variants. Default 1."),
       },
     },
     async ({ brief, thread = true, count }) => {
@@ -217,104 +189,214 @@ export function buildMcpServer(adminId: string): McpServer {
           {
             role: "system",
             content:
-              "Kamu kreator Threads yang nulis santai dan natural, kayak ngobrol sama temen. " +
-              "Output plain text aja, JANGAN pakai tag XML.",
+              "Kamu kreator Threads yang nulis santai dan natural, kayak ngobrol sama temen. Output plain text aja, JANGAN pakai tag XML.",
           },
           { role: "user", content: prompt },
         ],
         temperature: 0.9,
         max_tokens: thread ? 1600 : 1000,
       });
+      return { content: [{ type: "text", text: llm.text }] };
+    },
+  );
+
+  // Shared validation + critic gate for anything that puts content on Threads.
+  async function prepareForPublish(
+    segments: string[],
+    accountUsername: string | undefined,
+  ): Promise<
+    | { ok: true; acct: Awaited<ReturnType<typeof resolveReplizAccount>>; cleaned: string[] }
+    | { ok: false; error: string }
+  > {
+    const acct = await resolveReplizAccount(accountUsername);
+    const cleaned = segments.map((s) => s.trim()).filter(Boolean);
+    if (cleaned.length === 0) return { ok: false, error: "All segments were empty after trimming." };
+    const tooLong = cleaned.find((s) => s.length > THREADS_TEXT_LIMIT);
+    if (tooLong) {
+      return { ok: false, error: `Segment exceeds ${THREADS_TEXT_LIMIT} chars (got ${tooLong.length}).` };
+    }
+
+    // Safety/brand critic — fails closed.
+    const verdict = await critiqueDraft(cleaned.join("\n\n"), acct.username);
+    if (!verdict.pass) {
       return {
-        content: [{ type: "text", text: llm.text }],
+        ok: false,
+        error: `Blocked by safety critic (severity=${verdict.severity}): ${verdict.issues.join("; ")}`,
       };
+    }
+    return { ok: true, acct, cleaned };
+  }
+
+  server.registerTool(
+    "schedule_post",
+    {
+      title: "Schedule a Threads post/thread for later",
+      description:
+        "Schedule a post or multi-part thread to publish at a future time via Repliz. " +
+        "Runs the safety+brand critic first and refuses unsafe content. Each segment " +
+        "must be ≤ 500 chars. `scheduleAt` must be a future ISO-8601 timestamp.",
+      inputSchema: {
+        segments: z
+          .array(z.string().min(1).max(THREADS_TEXT_LIMIT))
+          .min(1)
+          .max(20)
+          .describe("Ordered thread parts. One element = single post; multiple = chain."),
+        scheduleAt: z
+          .string()
+          .describe("Future ISO-8601 timestamp, e.g. '2026-06-02T11:00:00.000Z'."),
+        account: z.string().optional().describe("Threads username (without @). Omit for default."),
+        topic: z.string().optional().describe("Optional topic label stored on the post."),
+      },
+    },
+    async ({ segments, scheduleAt, account, topic }) => {
+      const when = Date.parse(scheduleAt);
+      if (Number.isNaN(when)) {
+        return { isError: true, content: [{ type: "text", text: `Invalid scheduleAt: ${scheduleAt}` }] };
+      }
+      if (when <= Date.now()) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "scheduleAt must be in the future. Use publish_thread to post now." }],
+        };
+      }
+
+      const prep = await prepareForPublish(segments, account);
+      if (!prep.ok) return { isError: true, content: [{ type: "text", text: prep.error }] };
+
+      try {
+        const { scheduleId } = await createSchedule({
+          accountId: prep.acct.id,
+          description: prep.cleaned[0],
+          replies: prep.cleaned.slice(1),
+          topic,
+          scheduleAt: new Date(when).toISOString(),
+          isAiGenerated: true,
+          isDraft: false,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { ok: true, scheduleId, account: prep.acct.username, scheduleAt: new Date(when).toISOString(), parts: prep.cleaned.length },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Schedule failed: ${e instanceof Error ? e.message : String(e)}` }],
+        };
+      }
     },
   );
 
   server.registerTool(
     "publish_thread",
     {
-      title: "Publish to Threads",
+      title: "Publish to Threads now",
       description:
-        "Publish a post or multi-part thread chain to Threads on behalf of the " +
-        "selected account. Each segment must be ≤ 500 characters. This is a " +
-        "side-effecting action — the user should have approved the exact " +
-        "content before this is called.",
+        "Publish a post or multi-part thread immediately (scheduled ~1 minute out via " +
+        "Repliz). Runs the safety+brand critic first and refuses unsafe content. Each " +
+        "segment must be ≤ 500 chars.",
       inputSchema: {
         segments: z
           .array(z.string().min(1).max(THREADS_TEXT_LIMIT))
           .min(1)
           .max(20)
-          .describe(
-            "Ordered parts of the thread. One element = single post; multiple = chain.",
-          ),
-        account: z
-          .string()
-          .optional()
-          .describe(
-            "Threads username (without @) to publish from. Omit to use default.",
-          ),
+          .describe("Ordered thread parts. One element = single post; multiple = chain."),
+        account: z.string().optional().describe("Threads username (without @). Omit for default."),
+        topic: z.string().optional().describe("Optional topic label stored on the post."),
       },
     },
-    async ({ segments, account }) => {
-      const { user, token } = await resolveAccountWithToken(adminId, account);
+    async ({ segments, account, topic }) => {
+      const prep = await prepareForPublish(segments, account);
+      if (!prep.ok) return { isError: true, content: [{ type: "text", text: prep.error }] };
 
-      if (!user.scopes?.includes("threads_content_publish")) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Account "${user.username}" is missing the threads_content_publish scope. Reconnect at /settings.`,
-            },
-          ],
-        };
-      }
-
-      const cleaned = segments.map((s) => s.trim()).filter(Boolean);
-      if (cleaned.length === 0) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "All segments were empty after trimming." }],
-        };
-      }
-      const tooLong = cleaned.find((s) => s.length > THREADS_TEXT_LIMIT);
-      if (tooLong) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Segment exceeds ${THREADS_TEXT_LIMIT} chars (got ${tooLong.length}).`,
-            },
-          ],
-        };
-      }
-
+      const scheduleAt = new Date(Date.now() + PUBLISH_NOW_BUFFER_MS).toISOString();
       try {
-        const result = await publishThreadChain(user.threads_user_id, token, cleaned);
-        const payload = {
-          ok: true,
-          account: user.username,
-          ids: result.ids,
-          total: result.total,
-          permalink: result.permalink,
-          partial: result.failedAt !== undefined,
-          failedAt: result.failedAt,
-          partialError: result.error,
-        };
+        const { scheduleId } = await createSchedule({
+          accountId: prep.acct.id,
+          description: prep.cleaned[0],
+          replies: prep.cleaned.slice(1),
+          topic,
+          scheduleAt,
+          isAiGenerated: true,
+          isDraft: false,
+        });
         return {
-          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { ok: true, scheduleId, account: prep.acct.username, willPublishAt: scheduleAt, parts: prep.cleaned.length, note: "Repliz processes the post within ~1-2 minutes." },
+                null,
+                2,
+              ),
+            },
+          ],
         };
       } catch (e) {
         return {
           isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Publish failed: ${e instanceof Error ? e.message : String(e)}`,
-            },
-          ],
+          content: [{ type: "text", text: `Publish failed: ${e instanceof Error ? e.message : String(e)}` }],
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_scheduled",
+    {
+      title: "List scheduled/queued posts",
+      description:
+        "List scheduled posts for an account (or all). Useful to review the queue " +
+        "before/after auto-scheduling, or to find a scheduleId to delete.",
+      inputSchema: {
+        account: z.string().optional().describe("Threads username (without @). Omit for all accounts."),
+        status: z
+          .string()
+          .optional()
+          .describe("Filter by status, e.g. 'pending', 'published', 'failed'."),
+      },
+    },
+    async ({ account, status }) => {
+      const accountId = account ? (await resolveReplizAccount(account)).id : undefined;
+      const items = await listSchedules({ accountId, status });
+      const summary = items.map((s) => ({
+        scheduleId: s.id,
+        status: s.status,
+        scheduleAt: s.scheduleAt,
+        topic: s.topic,
+        preview: (s.description ?? "").slice(0, 120),
+        parts: 1 + (s.replies?.length ?? 0),
+      }));
+      return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "delete_schedule",
+    {
+      title: "Delete a scheduled post",
+      description:
+        "Remove a scheduled post from the Repliz queue by its scheduleId (get it from " +
+        "`list_scheduled`). Use to cancel auto-scheduled content that isn't suitable.",
+      inputSchema: {
+        scheduleId: z.string().min(1).describe("The Repliz scheduleId to delete."),
+      },
+    },
+    async ({ scheduleId }) => {
+      try {
+        await deleteSchedule(scheduleId);
+        return { content: [{ type: "text", text: JSON.stringify({ ok: true, deleted: scheduleId }) }] };
+      } catch (e) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Delete failed: ${e instanceof Error ? e.message : String(e)}` }],
         };
       }
     },
@@ -322,15 +404,13 @@ export function buildMcpServer(adminId: string): McpServer {
 
   // -------------------- Resources --------------------
 
-  // Inspect resources are URI-templated by account username so each account's
-  // data lives at a stable, addressable URI.
-  const topTemplate = new ResourceTemplate("threadlens://{username}/posts/top", {
+  const recentTemplate = new ResourceTemplate("threadlens://{username}/content/recent", {
     list: async () => {
-      const accounts = await listAccountsForAdmin(adminId);
+      const accounts = (await listReplizAccounts("threads")).filter((a) => a.isConnected);
       return {
         resources: accounts.map((a) => ({
-          uri: `threadlens://${a.username ?? a.threads_user_id}/posts/top`,
-          name: `Top posts — @${a.username ?? a.threads_user_id}`,
+          uri: `threadlens://${a.username}/content/recent`,
+          name: `Recent content — @${a.username}`,
           mimeType: "application/json",
         })),
       };
@@ -338,110 +418,29 @@ export function buildMcpServer(adminId: string): McpServer {
   });
 
   server.registerResource(
-    "top_posts",
-    topTemplate,
-    {
-      title: "Top posts (by engagement rate)",
-      description:
-        "Top 10 posts of an account, ordered by engagement rate descending. " +
-        "Read-only — use for inspection or discussion, not to feed `generate_draft` " +
-        "(that tool already pulls top posts internally).",
-      mimeType: "application/json",
-    },
-    async (uri, variables) => {
-      const username = String(variables.username);
-      const user = await resolveAccount(adminId, username);
-      const db = supabaseAdmin();
-      const { data, error } = await db
-        .from("posts")
-        .select(
-          "threads_post_id, text, permalink, published_at, post_insights ( views, likes, replies, reposts, quotes, shares, engagement_rate )",
-        )
-        .eq("user_id", user.id);
-      if (error) throw new Error(error.message);
-
-      const rows = (data ?? [])
-        .map((p: any) => ({
-          id: p.threads_post_id as string,
-          text: p.text as string | null,
-          permalink: p.permalink as string | null,
-          published_at: p.published_at as string,
-          views: Number(p.post_insights?.views ?? 0),
-          likes: Number(p.post_insights?.likes ?? 0),
-          replies: Number(p.post_insights?.replies ?? 0),
-          reposts: Number(p.post_insights?.reposts ?? 0),
-          quotes: Number(p.post_insights?.quotes ?? 0),
-          shares: Number(p.post_insights?.shares ?? 0),
-          engagement_rate: Number(p.post_insights?.engagement_rate ?? 0),
-        }))
-        .filter((p) => p.views > 0)
-        .sort((a, b) => b.engagement_rate - a.engagement_rate)
-        .slice(0, 10);
-
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "application/json",
-            text: JSON.stringify({ account: user.username, posts: rows }, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  const recentTemplate = new ResourceTemplate("threadlens://{username}/posts/recent", {
-    list: async () => {
-      const accounts = await listAccountsForAdmin(adminId);
-      return {
-        resources: accounts.map((a) => ({
-          uri: `threadlens://${a.username ?? a.threads_user_id}/posts/recent`,
-          name: `Recent posts — @${a.username ?? a.threads_user_id}`,
-          mimeType: "application/json",
-        })),
-      };
-    },
-  });
-
-  server.registerResource(
-    "recent_posts",
+    "recent_content",
     recentTemplate,
     {
-      title: "Recent posts",
-      description: "20 most-recently-published posts of an account with basic metrics.",
+      title: "Recent content",
+      description: "Most recent posts of an account from Repliz (text + link, no metrics).",
       mimeType: "application/json",
     },
     async (uri, variables) => {
-      const username = String(variables.username);
-      const user = await resolveAccount(adminId, username);
-      const db = supabaseAdmin();
-      const { data, error } = await db
-        .from("posts")
-        .select(
-          "threads_post_id, text, permalink, published_at, post_insights ( views, likes, replies, engagement_rate )",
-        )
-        .eq("user_id", user.id)
-        .order("published_at", { ascending: false })
-        .limit(20);
-      if (error) throw new Error(error.message);
-
-      const rows = (data ?? []).map((p: any) => ({
-        id: p.threads_post_id as string,
-        text: p.text as string | null,
-        permalink: p.permalink as string | null,
-        published_at: p.published_at as string,
-        views: Number(p.post_insights?.views ?? 0),
-        likes: Number(p.post_insights?.likes ?? 0),
-        replies: Number(p.post_insights?.replies ?? 0),
-        engagement_rate: Number(p.post_insights?.engagement_rate ?? 0),
+      const acct = await resolveReplizAccount(String(variables.username));
+      const { items } = await listReplizContent(acct.id);
+      const rows = items.slice(0, 20).map((c) => ({
+        id: c.id,
+        text: c.description,
+        url: c.url,
+        type: c.type,
+        created_at: c.createdAt,
       }));
-
       return {
         contents: [
           {
             uri: uri.toString(),
             mimeType: "application/json",
-            text: JSON.stringify({ account: user.username, posts: rows }, null, 2),
+            text: JSON.stringify({ account: acct.username, content: rows }, null, 2),
           },
         ],
       };

@@ -20,4 +20,7 @@ export const env = {
   sessionSecret: () => required("SESSION_SECRET", process.env.SESSION_SECRET),
   appUrl: () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   mcpBearerToken: () => required("MCP_BEARER_TOKEN", process.env.MCP_BEARER_TOKEN),
+  replizApiUser: () => required("REPLIZ_API_USER", process.env.REPLIZ_API_USER),
+  replizApiPass: () => required("REPLIZ_API_PASS", process.env.REPLIZ_API_PASS),
+  replizApiUrl: () => process.env.REPLIZ_API_URL ?? "https://api.repliz.com/public",
 };
