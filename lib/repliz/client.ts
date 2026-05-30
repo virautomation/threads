@@ -150,6 +150,42 @@ export async function createSchedule(input: CreateScheduleInput): Promise<{ sche
   return replizFetch<{ scheduleId: string }>("/schedule", { method: "POST", body });
 }
 
+export interface UpdateScheduleInput {
+  description: string;
+  replies?: string[];
+  topic?: string;
+  scheduleAt: string;
+}
+
+/** Update an existing schedule (PUT). Body mirrors create minus accountId. */
+export async function updateSchedule(scheduleId: string, input: UpdateScheduleInput): Promise<void> {
+  const body = {
+    title: "",
+    description: input.description,
+    topic: input.topic ?? "",
+    type: "text",
+    medias: [],
+    meta: { title: "", description: "", url: "" },
+    additionalInfo: {
+      isAiGenerated: true,
+      isDraft: false,
+      collaborators: [],
+      music: { id: "", artist: "", name: "", thumbnail: "" },
+      products: [],
+      tags: [],
+    },
+    replies: (input.replies ?? []).map((text) => ({
+      title: "",
+      description: text,
+      topic: "",
+      type: "text",
+      medias: [],
+    })),
+    scheduleAt: input.scheduleAt,
+  };
+  await replizFetch<unknown>(`/schedule/${scheduleId}`, { method: "PUT", body });
+}
+
 export async function listSchedules(opts: {
   accountId?: string;
   status?: string;

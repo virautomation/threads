@@ -10,12 +10,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { KpiCard } from "@/components/dashboard/kpi-card";
-import { Eye, Heart, CalendarClock, TrendingUp, Sparkles } from "lucide-react";
+import { Eye, Heart, CalendarClock, TrendingUp, Sparkles, Users } from "lucide-react";
 import { listReplizAccounts, listSchedules, type ReplizScheduleItem } from "@/lib/repliz/client";
 import { loadActiveMap } from "@/lib/repliz/settings";
 import { getLatestPerformance, getLearnings } from "@/lib/analytics/store";
 import { formatDate, formatDateTime, formatNumber, formatPercent, truncate } from "@/lib/utils";
 import { DeleteScheduleButton } from "@/components/autopilot/delete-schedule-button";
+import { EditScheduleDialog } from "@/components/autopilot/edit-schedule-dialog";
+import { AccountToggle } from "@/components/autopilot/account-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -33,10 +35,6 @@ export default async function AutopilotPage({
     loadError = e instanceof Error ? e.message : String(e);
   }
 
-  const active = accounts.filter(
-    (a) => a.isConnected && (activeMap === null || activeMap.get(a.id) === true),
-  );
-
   if (loadError) {
     return (
       <Shell>
@@ -50,27 +48,60 @@ export default async function AutopilotPage({
     );
   }
 
-  if (active.length === 0) {
+  const connected = accounts.filter((a) => a.isConnected);
+  const isActive = (id: string) => (activeMap === null ? false : activeMap.get(id) === true);
+  const active = connected.filter((a) => isActive(a.id));
+
+  const selected =
+    active.find((a) => a.username.toLowerCase() === (searchParams.account ?? "").toLowerCase()) ??
+    active[0] ??
+    null;
+
+  // Accounts management card — always visible so activation works from the UI.
+  const accountsCard = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="h-4 w-4" /> Akun ({active.length}/{connected.length} aktif)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {connected.length === 0 && (
+          <div className="text-sm text-muted-foreground">Belum ada akun Threads terhubung di Repliz.</div>
+        )}
+        {connected.map((a) => (
+          <div key={a.id} className="flex items-center justify-between rounded-md border p-2">
+            <div className="flex items-center gap-2 text-sm">
+              {selected?.id === a.id ? (
+                <span className="font-medium">@{a.username}</span>
+              ) : isActive(a.id) ? (
+                <Link href={`/autopilot?account=${encodeURIComponent(a.username)}`} className="font-medium hover:underline">
+                  @{a.username}
+                </Link>
+              ) : (
+                <span>@{a.username}</span>
+              )}
+              <span className="text-muted-foreground">{a.name}</span>
+            </div>
+            <AccountToggle accountId={a.id} username={a.username} active={isActive(a.id)} />
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+
+  if (!selected) {
     return (
       <Shell>
+        {accountsCard}
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Belum ada akun yang aktif. Aktifkan lewat tool{" "}
-            <code className="rounded bg-muted px-1">set_account_active</code> dulu.
-            {accounts.length > 0 && (
-              <div className="mt-2">
-                Terhubung: {accounts.map((a) => a.username).join(", ")}
-              </div>
-            )}
+            Aktifkan minimal satu akun di atas untuk mulai.
           </CardContent>
         </Card>
       </Shell>
     );
   }
-
-  const selected =
-    active.find((a) => a.username.toLowerCase() === (searchParams.account ?? "").toLowerCase()) ??
-    active[0];
 
   let scheduled: ReplizScheduleItem[] = [];
   try {
@@ -96,14 +127,7 @@ export default async function AutopilotPage({
 
   return (
     <Shell>
-      {/* account switcher */}
-      <div className="flex flex-wrap gap-2">
-        {active.map((a) => (
-          <Link key={a.id} href={`/autopilot?account=${encodeURIComponent(a.username)}`}>
-            <Badge variant={a.id === selected.id ? "default" : "outline"}>@{a.username}</Badge>
-          </Link>
-        ))}
-      </div>
+      {accountsCard}
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Post tertrack" value={formatNumber(performance.length)} icon={TrendingUp} />
@@ -116,7 +140,7 @@ export default async function AutopilotPage({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CalendarClock className="h-4 w-4" /> Terjadwal (pending)
+            <CalendarClock className="h-4 w-4" /> Terjadwal — @{selected.username}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -129,24 +153,36 @@ export default async function AutopilotPage({
                   <TableHead className="w-44">Tayang</TableHead>
                   <TableHead className="w-40">Topik</TableHead>
                   <TableHead>Preview</TableHead>
-                  <TableHead className="w-14 text-right">Part</TableHead>
-                  <TableHead className="w-12"></TableHead>
+                  <TableHead className="w-12 text-right">Part</TableHead>
+                  <TableHead className="w-20"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {scheduled.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="text-sm">{formatDateTime(s.scheduleAt)}</TableCell>
-                    <TableCell className="text-sm">{s.topic || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {truncate(s.description, 90) || "(tanpa teks)"}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">{1 + (s.replies?.length ?? 0)}</TableCell>
-                    <TableCell className="text-right">
-                      <DeleteScheduleButton scheduleId={s.id} />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {scheduled.map((s) => {
+                  const segs = [
+                    s.description ?? "",
+                    ...(s.replies ?? []).map((r) => r.description ?? ""),
+                  ].filter(Boolean);
+                  return (
+                    <TableRow key={s.id}>
+                      <TableCell className="text-sm">{formatDateTime(s.scheduleAt)}</TableCell>
+                      <TableCell className="text-sm">{s.topic || "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {truncate(s.description, 90) || "(tanpa teks)"}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">{segs.length}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">
+                        <EditScheduleDialog
+                          scheduleId={s.id}
+                          topic={s.topic}
+                          segments={segs}
+                          scheduleAt={s.scheduleAt}
+                        />
+                        <DeleteScheduleButton scheduleId={s.id} />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
