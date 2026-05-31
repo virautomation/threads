@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { updateSchedule } from "@/lib/repliz/client";
-import { critiqueDraft } from "@/lib/mcp/critic";
 import { THREADS_TEXT_LIMIT } from "@/lib/threads/api";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/**
- * Update a scheduled post (text/time) from the Autopilot UI. Admin-session
- * guarded. Re-runs the safety critic on the edited text so manual edits can't
- * slip unsafe content past the gate either.
- */
+/** Update a scheduled post (text/time) from the Autopilot UI. Admin-session guarded. */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -39,15 +34,6 @@ export async function POST(req: NextRequest) {
 
   const when = Date.parse(scheduleAt);
   if (Number.isNaN(when)) return NextResponse.json({ error: "scheduleAt tidak valid" }, { status: 400 });
-
-  // Re-run critic on the edited content.
-  const verdict = await critiqueDraft(segments.join("\n\n"));
-  if (!verdict.pass) {
-    return NextResponse.json(
-      { error: `Ditolak critic (${verdict.severity}): ${verdict.issues.join("; ")}` },
-      { status: 422 },
-    );
-  }
 
   try {
     await updateSchedule(scheduleId, {

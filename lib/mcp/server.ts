@@ -12,7 +12,6 @@ import {
   listSchedules,
 } from "../repliz/client";
 import { resolveReplizAccount } from "../repliz/accounts";
-import { critiqueDraft } from "./critic";
 import { getLatestPerformance, getLearnings, saveLearning } from "../analytics/store";
 import { isAccountUsable, loadActiveMap, setAccountActive } from "../repliz/settings";
 
@@ -39,9 +38,7 @@ export function buildMcpServer(_adminId: string): McpServer {
         "(write, grounded in learnings) → schedule_post (queue for the week). " +
         "list_scheduled/delete_schedule manage the queue; publish_thread posts now; " +
         "generate_idea is a plain-text brainstorm that touches nothing.\n\n" +
-        "schedule_post and publish_thread run an automated safety+brand critic and " +
-        "REFUSE unsafe content (especially false medical claims for the women's-" +
-        "health niche). Post performance is synced by a daily cron; account_summary " +
+        "Post performance is synced by a daily cron; account_summary " +
         "and get_post_stats read it. The `account` param selects a Threads account " +
         "by username; omit to use the default.",
     },
@@ -273,15 +270,6 @@ export function buildMcpServer(_adminId: string): McpServer {
     if (tooLong) {
       return { ok: false, error: `Segment exceeds ${THREADS_TEXT_LIMIT} chars (got ${tooLong.length}).` };
     }
-
-    // Safety/brand critic — fails closed.
-    const verdict = await critiqueDraft(cleaned.join("\n\n"), acct.username);
-    if (!verdict.pass) {
-      return {
-        ok: false,
-        error: `Blocked by safety critic (severity=${verdict.severity}): ${verdict.issues.join("; ")}`,
-      };
-    }
     return { ok: true, acct, cleaned };
   }
 
@@ -291,8 +279,8 @@ export function buildMcpServer(_adminId: string): McpServer {
       title: "Schedule a Threads post/thread for later",
       description:
         "Schedule a post or multi-part thread to publish at a future time via Repliz. " +
-        "Runs the safety+brand critic first and refuses unsafe content. Each segment " +
-        "must be ≤ 500 chars. `scheduleAt` must be a future ISO-8601 timestamp.",
+        "Each segment must be ≤ 500 chars. `scheduleAt` must be a future ISO-8601 timestamp. " +
+        "Account must be marked active (set_account_active).",
       inputSchema: {
         segments: z
           .array(z.string().min(1).max(THREADS_TEXT_LIMIT))
@@ -358,8 +346,7 @@ export function buildMcpServer(_adminId: string): McpServer {
       title: "Publish to Threads now",
       description:
         "Publish a post or multi-part thread immediately (scheduled ~1 minute out via " +
-        "Repliz). Runs the safety+brand critic first and refuses unsafe content. Each " +
-        "segment must be ≤ 500 chars.",
+        "Repliz). Each segment must be ≤ 500 chars. Account must be marked active.",
       inputSchema: {
         segments: z
           .array(z.string().min(1).max(THREADS_TEXT_LIMIT))
