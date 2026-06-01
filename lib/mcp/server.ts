@@ -122,7 +122,13 @@ export function buildMcpServer(_adminId: string): McpServer {
         "Drafts are NOT published — call `schedule_post` or `publish_thread` after the " +
         "content is chosen.",
       inputSchema: {
-        brief: z.string().min(1).max(1000).describe("Topic / brief, e.g. 'tanda PCOS'"),
+        brief: z
+          .string()
+          .min(1)
+          .max(8000)
+          .describe(
+            "Topic / brief, e.g. 'tanda PCOS'. Sampai 8000 chars — runner boleh inject learning context (best_hooks, avoid, recent_topics, dst) di sini.",
+          ),
         account: z
           .string()
           .optional()
@@ -214,7 +220,7 @@ export function buildMcpServer(_adminId: string): McpServer {
         "NOT persist, and ignores account voice grounding. Use when the user wants to " +
         "*read* an idea. Use `generate_draft` then `schedule_post`/`publish_thread` to act.",
       inputSchema: {
-        brief: z.string().min(1).max(1000).describe("Topic / brief, e.g. 'keputihan'."),
+        brief: z.string().min(1).max(8000).describe("Topic / brief, e.g. 'keputihan'."),
         thread: z
           .boolean()
           .optional()
