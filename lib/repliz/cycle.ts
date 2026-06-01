@@ -98,13 +98,13 @@ export async function runDailyCycle(input: {
     };
   }
 
-  // Build brief: explicit override > niche-aware default.
+  // Build brief: explicit override > niche+learnings-aware default.
   const learnings = await getLearnings(acct.id, 5).catch(() => [] as LearningRow[]);
-  const recentTopics = collectRecentTopics(learnings);
+  const learningContext = collectLearningContext(learnings);
   const niche = setting?.niche ?? null;
   const brief = (input.brief?.trim() ?? "").length > 0
     ? input.brief!
-    : defaultBrief({ niche, count: empty.length, recentTopics });
+    : defaultBrief({ niche, count: empty.length, context: learningContext });
 
   const prompt = buildComposePrompt({
     brief,
@@ -344,30 +344,74 @@ function deriveTopic(text: string): string {
   return firstLine.replace(/\s+/g, " ").trim().slice(0, 60);
 }
 
-function collectRecentTopics(learnings: LearningRow[]): string[] {
-  const set = new Set<string>();
-  for (const l of learnings) {
-    const arr = (l.patterns as any)?.recent_topics;
-    if (Array.isArray(arr)) for (const t of arr) if (typeof t === "string") set.add(t);
-  }
-  return [...set].slice(0, 20);
+interface LearningContext {
+  latestSummary: string;
+  bestHooks: string[];
+  bestFormats: string[];
+  bestTimesWib: string[];
+  avoid: string[];
+  recentTopics: string[];
+}
+
+function collectLearningContext(learnings: LearningRow[]): LearningContext {
+  const dedupe = (arr: string[]) => [...new Set(arr.filter(Boolean))];
+  const collectField = (field: string): string[] => {
+    const all: string[] = [];
+    for (const l of learnings) {
+      const arr = (l.patterns as any)?.[field];
+      if (Array.isArray(arr)) for (const t of arr) if (typeof t === "string") all.push(t);
+    }
+    return dedupe(all);
+  };
+  return {
+    latestSummary: learnings[0]?.summary ?? "",
+    bestHooks: collectField("best_hooks").slice(0, 10),
+    bestFormats: collectField("best_formats").slice(0, 10),
+    bestTimesWib: collectField("best_times_wib").slice(0, 10),
+    avoid: collectField("avoid").slice(0, 15),
+    recentTopics: collectField("recent_topics").slice(0, 20),
+  };
 }
 
 function defaultBrief(opts: {
   niche: string | null;
   count: number;
-  recentTopics: string[];
+  context: LearningContext;
 }): string {
+  const { latestSummary, bestHooks, bestFormats, bestTimesWib, avoid, recentTopics } = opts.context;
   const nicheLine = opts.niche
     ? `Niche akun: ${opts.niche}.`
     : "Niche bebas, fokus storyteller berkualitas.";
-  const avoidLine = opts.recentTopics.length
-    ? `HINDARI topik yang baru dipakai: ${opts.recentTopics.join("; ")}.`
-    : "";
-  return `${opts.count} thread storyteller untuk akun ini. ${nicheLine}
-Tiap thread beda angle (cerita pribadi, mitos vs fakta, fakta surprising, momen relate, Q&A reflektif, dll). Tone santai kayak ngobrol temen, vulnerable, relate. HINDARI listicle kaku & bahasa motivator.
-${avoidLine}
-Untuk niche medis/kesehatan: framing edukasi, sisipkan disclaimer halus "kalau ragu konsul ke dokter". JANGAN klaim sembuh, JANGAN diagnosis, JANGAN nyuruh skip dokter.`;
+
+  const lines: string[] = [
+    `${opts.count} thread storyteller untuk akun ini.`,
+    nicheLine,
+  ];
+
+  // Inject blok konteks hanya kalau ada minimal 1 sinyal (cold start tetep clean).
+  const hasContext =
+    !!latestSummary ||
+    bestHooks.length > 0 ||
+    bestFormats.length > 0 ||
+    bestTimesWib.length > 0 ||
+    avoid.length > 0 ||
+    recentTopics.length > 0;
+
+  if (hasContext) {
+    lines.push("KONTEKS DARI PERFORMA SEBELUMNYA — pakai sebagai panduan, jangan diabaikan:");
+    if (latestSummary) lines.push(`Insight terbaru: "${latestSummary}".`);
+    if (bestHooks.length) lines.push(`Hook yang KONSISTEN MENANG (utamakan pola ini): ${bestHooks.join("; ")}.`);
+    if (bestFormats.length) lines.push(`Format yang work: ${bestFormats.join("; ")}.`);
+    if (avoid.length) lines.push(`HINDARI (terbukti gak work): ${avoid.join("; ")}.`);
+    if (recentTopics.length) lines.push(`HINDARI topik yang BARU DIPAKAI (jangan diulang): ${recentTopics.join(", ")}.`);
+  }
+
+  lines.push(
+    "Tiap thread beda angle (cerita pribadi, mitos vs fakta, fakta surprising, momen relate, Q&A reflektif, dll). Tone santai kayak ngobrol temen, vulnerable, relate. HINDARI listicle kaku & bahasa motivator.",
+    "Untuk niche medis/kesehatan: framing edukasi, sisipkan disclaimer halus \"kalau ragu konsul ke dokter\". JANGAN klaim sembuh, JANGAN diagnosis, JANGAN nyuruh skip dokter.",
+  );
+
+  return lines.join("\n");
 }
 
 function extractJson(raw: string): { summary?: unknown; patterns?: unknown } {
